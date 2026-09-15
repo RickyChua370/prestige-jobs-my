@@ -19,6 +19,25 @@ export function daysUntil(iso: string | null, now: Date = new Date()): number | 
   return Math.ceil((target - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+/** Relative "time ago" from an ISO timestamp, e.g. "3 days ago", "just now". */
+export function timeAgo(iso: string | null, now: Date = new Date()): string {
+  if (!iso) return "never";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "unknown";
+  const secs = Math.max(0, Math.floor((now.getTime() - then) / 1000));
+  const mins = Math.floor(secs / 60);
+  const hrs = Math.floor(mins / 60);
+  const days = Math.floor(hrs / 24);
+  const months = Math.floor(days / 30);
+  if (secs < 60) return "just now";
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
+  const years = Math.floor(months / 12);
+  return `${years} year${years === 1 ? "" : "s"} ago`;
+}
+
 export const STATUS_META: Record<
   Status,
   { label: string; className: string }

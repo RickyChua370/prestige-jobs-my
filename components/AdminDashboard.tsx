@@ -1,10 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { computeStatus, type Program, type ProgramInput } from "@/lib/types";
-import { STATUS_META, formatDate } from "@/lib/format";
+import { STATUS_META, formatDate, timeAgo } from "@/lib/format";
+import {
+  getReviewReasons,
+  summarizeReview,
+  type ReviewReasonCode,
+} from "@/lib/review";
 import ProgramForm from "./ProgramForm";
+
+const REASON_LABEL: Record<ReviewReasonCode, string> = {
+  closed_recently: "Closed — update dates",
+  reopen_due: "Reopen due",
+  closing_soon: "Closing soon",
+  stale: "Stale",
+};
 
 export default function AdminDashboard({
   initialPrograms,
@@ -16,11 +28,16 @@ export default function AdminDashboard({
   const [editing, setEditing] = useState<Program | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState("");
+  const [reviewOnly, setReviewOnly] = useState(false);
   const [toast, setToast] = useState<string>("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   function flash(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(""), 2500);
+    setTimeout(() => setToast(""), 3000);
   }
 
   async function refresh() {
@@ -70,11 +87,42 @@ export default function AdminDashboard({
     router.refresh();
   }
 
-  const filtered = programs.filter((p) => {
+  async function handleImportFile(file: File) {
+    setImporting(true);
+    setImportErrors([]);
+    const csv = await file.text();
+    const res = await fetch("/api/programs/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ csv }),
+    });
+    const json = await res.json().catch(() => ({}));
+    setImporting(false);
+    if (fileRef.current) fileRef.current.value = "";
+    if (!res.ok) {
+      setImportErrors(json.errors ?? ["Import failed."]);
+      return;
+    }
+    await refresh();
+    setImportOpen(false);
+    const o = json.outcome;
+    const parts = [`${o.created} added`, `${o.updated} updated`];
+    if (o.skippedMissingIds?.length)
+      parts.push(`${o.skippedMissingIds.length} skipped (unknown id)`);
+    flash(`Import complete: ${parts.join(", ")}.`);
+  }
+
+  const summary = useMemo(() => summarizeReview(programs), [programs]);
+
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return `${p.title} ${p.company} ${p.industry}`.toLowerCase().includes(q);
-  });
+    return programs.filter((p) => {
+      if (q && !`${p.title} ${p.company} ${p.industry}`.toLowerCase().includes(q))
+        return false;
+      if (reviewOnly && getReviewReasons(p).length === 0) return false;
+      return true;
+    });
+  }, [programs, search, reviewOnly]);
 
   return (
     <div>
@@ -93,7 +141,7 @@ export default function AdminDashboard({
             {programs.length} programmes in the database.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => {
               setShowAdd((s) => !s);
@@ -103,6 +151,21 @@ export default function AdminDashboard({
           >
             {showAdd ? "Close form" : "+ Add programme"}
           </button>
+          <a
+            href="/api/programs/export"
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            ↓ Export CSV
+          </a>
+          <button
+            onClick={() => {
+              setImportOpen((s) => !s);
+              setImportErrors([]);
+            }}
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            ↑ Import CSV
+          </button>
           <button
             onClick={handleLogout}
             className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -111,6 +174,85 @@ export default function AdminDashboard({
           </button>
         </div>
       </div>
+
+      {/* Needs-review banner */}
+      {summary.needsReview > 0 && (
+        <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="font-semibold text-amber-900">
+                {summary.needsReview} programme
+                {summary.needsReview === 1 ? "" : "s"} need review
+              </span>
+              <span className="ml-2 text-sm text-amber-800">
+                {summary.byCode.closed_recently > 0 &&
+                  `${summary.byCode.closed_recently} closed · `}
+                {summary.byCode.reopen_due > 0 &&
+                  `${summary.byCode.reopen_due} reopen due · `}
+                {summary.byCode.closing_soon > 0 &&
+                  `${summary.byCode.closing_soon} closing soon · `}
+                {summary.byCode.stale > 0 && `${summary.byCode.stale} stale`}
+              </span>
+            </div>
+            <button
+              onClick={() => setReviewOnly((v) => !v)}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                reviewOnly
+                  ? "bg-amber-600 text-white hover:bg-amber-700"
+                  : "border border-amber-400 text-amber-800 hover:bg-amber-100"
+              }`}
+            >
+              {reviewOnly ? "Showing flagged only" : "Show flagged only"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Import panel */}
+      {importOpen && (
+        <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="mb-1 text-lg font-semibold">Import from CSV</h2>
+          <p className="mb-3 text-sm text-slate-500">
+            Upload a CSV to add or update many programmes at once. Rows with an{" "}
+            <code className="rounded bg-slate-100 px-1">id</code> update that
+            programme; rows with a blank id create a new one.{" "}
+            <a
+              href="/api/programs/export"
+              className="text-brand-600 hover:underline"
+            >
+              Export first
+            </a>{" "}
+            to get a correctly-formatted template. If any row is invalid the
+            whole import is rejected — nothing is changed.
+          </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,text/csv"
+            disabled={importing}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleImportFile(f);
+            }}
+            className="block text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-brand-600 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-brand-700"
+          />
+          {importing && (
+            <p className="mt-2 text-sm text-slate-500">Importing…</p>
+          )}
+          {importErrors.length > 0 && (
+            <div className="mt-3 max-h-48 overflow-auto rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+              <p className="mb-1 font-medium">
+                Import rejected — please fix these and try again:
+              </p>
+              <ul className="list-inside list-disc space-y-0.5">
+                {importErrors.map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {showAdd && (
         <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
@@ -148,17 +290,32 @@ export default function AdminDashboard({
               <th className="px-4 py-3 font-medium">Industry</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Closes</th>
+              <th className="px-4 py-3 font-medium">Updated</th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.map((p) => {
               const status = computeStatus(p);
+              const reasons = getReviewReasons(p);
               return (
                 <tr key={p.id} className="hover:bg-slate-50/70">
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-900">{p.title}</div>
                     <div className="text-xs text-slate-500">{p.company}</div>
+                    {reasons.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {reasons.map((r) => (
+                          <span
+                            key={r.code}
+                            title={r.message}
+                            className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20"
+                          >
+                            ⚑ {REASON_LABEL[r.code]}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{p.industry}</td>
                   <td className="px-4 py-3">
@@ -170,6 +327,9 @@ export default function AdminDashboard({
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {formatDate(p.closeDate)}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500">
+                    {timeAgo(p.updatedAt)}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
@@ -196,7 +356,7 @@ export default function AdminDashboard({
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
                   No programmes match.
                 </td>
               </tr>

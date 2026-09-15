@@ -140,6 +140,69 @@ export async function countPrograms(): Promise<number> {
   return rows[0].n;
 }
 
+export interface BulkImportOutcome {
+  created: number;
+  updated: number;
+  skippedMissingIds: number[];
+}
+
+/**
+ * Bulk import for the CSV uploader. Rows with an id update the matching
+ * programme (skipped if that id no longer exists); rows without an id create
+ * a new programme. Runs inside a single transaction so a mid-way failure
+ * rolls everything back.
+ */
+export async function bulkImportPrograms(
+  rows: { id: number | null; data: ProgramInput }[]
+): Promise<BulkImportOutcome> {
+  await ensureSchema();
+  const pool = getPool();
+  const client = await pool.connect();
+  const outcome: BulkImportOutcome = {
+    created: 0,
+    updated: 0,
+    skippedMissingIds: [],
+  };
+  try {
+    await client.query("BEGIN");
+    for (const { id, data } of rows) {
+      const p = normalize(data);
+      const values = [
+        p.title, p.company, p.industry, p.roleType, p.location, p.openDate,
+        p.closeDate, p.expectedReopen, p.applyLink, p.eligibility, p.notes,
+      ];
+      if (id !== null) {
+        const res = await client.query(
+          `UPDATE programs SET
+             title=$1, company=$2, industry=$3, "roleType"=$4, location=$5,
+             "openDate"=$6, "closeDate"=$7, "expectedReopen"=$8, "applyLink"=$9,
+             eligibility=$10, notes=$11, "updatedAt"=now()
+           WHERE id=$12`,
+          [...values, id]
+        );
+        if (res.rowCount && res.rowCount > 0) outcome.updated++;
+        else outcome.skippedMissingIds.push(id);
+      } else {
+        await client.query(
+          `INSERT INTO programs
+             (title, company, industry, "roleType", location, "openDate",
+              "closeDate", "expectedReopen", "applyLink", eligibility, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          values
+        );
+        outcome.created++;
+      }
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+  return outcome;
+}
+
 /** Coerce empty strings to null so optional date/text columns stay clean. */
 function normalize(input: ProgramInput) {
   const nn = (v: string | null | undefined) =>
