@@ -1,10 +1,17 @@
 import JobsTable from "@/components/JobsTable";
 import { listPrograms } from "@/lib/db";
+import { timeAgo } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const programs = await listPrograms();
+
+  // Freshness: the most recent time any programme was updated.
+  const lastUpdated = programs.reduce<string | null>((latest, p) => {
+    if (!p.updatedAt) return latest;
+    return !latest || p.updatedAt > latest ? p.updatedAt : latest;
+  }, null);
 
   return (
     <div>
@@ -20,6 +27,12 @@ export default async function HomePage() {
           what&apos;s{" "}
           <span className="font-medium text-amber-700">expected to reopen</span>.
         </p>
+        {lastUpdated && (
+          <p className="mt-2 text-xs text-slate-400">
+            Curated list · data last updated {timeAgo(lastUpdated)}. Always
+            confirm dates on the official employer page before applying.
+          </p>
+        )}
       </section>
 
       {programs.length === 0 ? (
