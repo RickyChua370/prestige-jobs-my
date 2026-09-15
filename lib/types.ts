@@ -57,8 +57,14 @@ export interface Program {
    * when the next cycle is expected (e.g. "Expected Aug 2026").
    */
   expectedReopen: string | null;
-  /** Direct link to the official careers / application page. */
+  /** Direct link to the official application page (used when the role is open). */
   applyLink: string;
+  /**
+   * Link to the programme's info/details page (used when the role is upcoming
+   * or closed, so students can read about it and bookmark for next cycle).
+   * Null falls back to applyLink.
+   */
+  infoLink: string | null;
   /** Eligibility summary, e.g. "Penultimate-year students" or "Fresh grads <2yrs". */
   eligibility: string | null;
   /** Free-form curator notes (perks, cohort size, deadlines nuance). */
@@ -74,6 +80,35 @@ export type ProgramInput = Omit<Program, "id" | "createdAt" | "updatedAt">;
  * Derive the *effective* status of a program from its dates and the current
  * time. Stored status is a hint; dates are the source of truth when present.
  */
+/**
+ * Choose which link to show and how to label it, based on the programme's
+ * effective status:
+ *  - open      → "Apply" using applyLink (fall back to infoLink)
+ *  - upcoming/ → "View details" using infoLink (fall back to applyLink)
+ *    closed
+ */
+export function pickLink(
+  program: Pick<
+    Program,
+    "openDate" | "closeDate" | "expectedReopen" | "applyLink" | "infoLink"
+  >,
+  now: Date = new Date()
+): { href: string; label: string; isApply: boolean } {
+  const status = computeStatus(program, now);
+  if (status === "open") {
+    return {
+      href: program.applyLink || program.infoLink || "#",
+      label: "Apply",
+      isApply: true,
+    };
+  }
+  return {
+    href: program.infoLink || program.applyLink || "#",
+    label: "View details",
+    isApply: false,
+  };
+}
+
 export function computeStatus(
   program: Pick<Program, "openDate" | "closeDate" | "expectedReopen">,
   now: Date = new Date()

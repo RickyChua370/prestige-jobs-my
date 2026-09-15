@@ -42,7 +42,10 @@ const monthName = (offsetMonths: number) => {
   return d.toLocaleDateString("en-GB", { month: "short", year: "numeric" });
 };
 
-type Seed = Omit<ProgramInput, "location"> & { location?: string };
+type Seed = Omit<ProgramInput, "location" | "infoLink"> & {
+  location?: string;
+  infoLink?: string | null;
+};
 
 const programs: Seed[] = [
   // ===================== INVESTMENT BANKING =====================
@@ -1741,6 +1744,7 @@ async function main() {
       "closeDate"    TEXT,
       "expectedReopen" TEXT,
       "applyLink"    TEXT NOT NULL,
+      "infoLink"     TEXT,
       eligibility    TEXT,
       notes          TEXT,
       "createdAt"    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1765,8 +1769,8 @@ async function main() {
     await pool.query(
       `INSERT INTO programs
         (title, company, industry, "roleType", location, "openDate", "closeDate",
-         "expectedReopen", "applyLink", eligibility, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+         "expectedReopen", "applyLink", "infoLink", eligibility, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
         r.title,
         r.company,
@@ -1777,6 +1781,7 @@ async function main() {
         r.closeDate ?? null,
         r.expectedReopen ?? null,
         r.applyLink,
+        r.infoLink ?? null,
         r.eligibility ?? null,
         r.notes ?? null,
       ]

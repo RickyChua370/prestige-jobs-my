@@ -18,6 +18,7 @@ const EMPTY: ProgramInput = {
   closeDate: null,
   expectedReopen: null,
   applyLink: "",
+  infoLink: null,
   eligibility: null,
   notes: null,
 };
@@ -45,6 +46,7 @@ export default function ProgramForm({
           closeDate: initial.closeDate,
           expectedReopen: initial.expectedReopen,
           applyLink: initial.applyLink,
+          infoLink: initial.infoLink,
           eligibility: initial.eligibility,
           notes: initial.notes,
         }
@@ -132,13 +134,22 @@ export default function ProgramForm({
             className={inputCls}
           />
         </Field>
-        <Field label="Apply link *">
+        <Field label="Apply link * (shown when Open)">
           <input
             required
             type="url"
             value={form.applyLink}
             onChange={(e) => set("applyLink", e.target.value)}
-            placeholder="https://…"
+            placeholder="https://… direct application page"
+            className={inputCls}
+          />
+        </Field>
+        <Field label="Info link (shown when Upcoming/Closed)">
+          <input
+            type="url"
+            value={form.infoLink ?? ""}
+            onChange={(e) => set("infoLink", e.target.value || null)}
+            placeholder="https://… programme details page (optional)"
             className={inputCls}
           />
         </Field>
