@@ -22,6 +22,7 @@ export const CSV_COLUMNS = [
   "closeDate",
   "expectedReopen",
   "applyLink",
+  "infoLink",
   "eligibility",
   "notes",
 ] as const;
@@ -149,6 +150,7 @@ export function parseImportCsv(text: string): CsvImportResult {
       closeDate: get(line, "closeDate"),
       expectedReopen: get(line, "expectedReopen"),
       applyLink: get(line, "applyLink"),
+      infoLink: get(line, "infoLink"),
       eligibility: get(line, "eligibility"),
       notes: get(line, "notes"),
     };

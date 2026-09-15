@@ -29,6 +29,10 @@ export function parseProgramInput(body: unknown): {
   else if (!/^https?:\/\//i.test(applyLink))
     errors.push("Apply link must start with http:// or https://.");
 
+  const infoLink = optStr(b.infoLink);
+  if (infoLink && !/^https?:\/\//i.test(infoLink))
+    errors.push("Info link must start with http:// or https://.");
+
   const isoOrNull = (v: unknown, label: string): string | null => {
     const s = optStr(v);
     if (s === null) return null;
@@ -58,6 +62,7 @@ export function parseProgramInput(body: unknown): {
       closeDate,
       expectedReopen: optStr(b.expectedReopen),
       applyLink,
+      infoLink,
       eligibility: optStr(b.eligibility),
       notes: optStr(b.notes),
     },

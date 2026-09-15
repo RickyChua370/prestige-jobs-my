@@ -6,6 +6,7 @@ import {
   ROLE_TYPES,
   STATUSES,
   computeStatus,
+  pickLink,
   type Program,
   type Status,
 } from "@/lib/types";
@@ -262,14 +263,23 @@ export default function JobsTable({ programs }: { programs: Program[] }) {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <a
-                      href={p.applyLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
-                    >
-                      Apply ↗
-                    </a>
+                    {(() => {
+                      const link = pickLink(p);
+                      return (
+                        <a
+                          href={link.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`inline-flex items-center rounded-md px-3 py-1.5 text-xs font-medium ${
+                            link.isApply
+                              ? "bg-brand-600 text-white hover:bg-brand-700"
+                              : "border border-slate-300 text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          {link.label} ↗
+                        </a>
+                      );
+                    })()}
                   </td>
                 </tr>
               );
