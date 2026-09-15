@@ -1,101 +1,143 @@
-import Database from "better-sqlite3";
-import path from "node:path";
-import fs from "node:fs";
+import { Pool } from "pg";
 import type { Program, ProgramInput } from "./types";
 
 // ---------------------------------------------------------------------------
-// SQLite connection (single shared instance across the server process).
-// The database file lives in /data and is created on first use.
+// Postgres connection via node-postgres (pg).
+//
+// A single shared Pool is reused across invocations. The connection string
+// comes from the DATABASE_URL environment variable:
+//   - Locally:  put it in .env.local
+//   - On Vercel: set it in Project Settings → Environment Variables
+//                (the Neon integration adds it automatically)
+//
+// Using a standard TCP driver + pool works with ANY Postgres — Neon, a local
+// database, or any managed host — and is Neon's recommended method on Vercel.
+// For serverless, use Neon's *pooled* connection string (host contains
+// "-pooler") so connections are multiplexed through PgBouncer.
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "prestige-jobs.db");
+// Reuse the pool across hot reloads / serverless invocations in the same
+// process by stashing it on globalThis.
+const globalForPg = globalThis as unknown as { _pgPool?: Pool };
 
-let _db: Database.Database | null = null;
+function getPool(): Pool {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is not set. Add your Postgres connection string to .env.local (local) or Vercel env vars (production)."
+    );
+  }
+  if (!globalForPg._pgPool) {
+    globalForPg._pgPool = new Pool({
+      connectionString: url,
+      // Neon and most managed Postgres require SSL. `rejectUnauthorized: false`
+      // avoids local CA hassles; the connection is still encrypted.
+      ssl: url.includes("sslmode=require") || url.includes("neon.tech")
+        ? { rejectUnauthorized: false }
+        : undefined,
+      max: 5,
+    });
+  }
+  return globalForPg._pgPool;
+}
 
-export function getDb(): Database.Database {
-  if (_db) return _db;
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+async function query<T = Record<string, unknown>>(
+  text: string,
+  params: unknown[] = []
+): Promise<T[]> {
+  const res = await getPool().query(text, params);
+  return res.rows as T[];
+}
 
-  const db = new Database(DB_PATH);
-  db.pragma("journal_mode = WAL");
-  db.exec(`
+/**
+ * Create the table if it doesn't exist. Safe to call repeatedly.
+ * Called by data-access helpers and the seed script.
+ */
+export async function ensureSchema(): Promise<void> {
+  await query(`
     CREATE TABLE IF NOT EXISTS programs (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      id             SERIAL PRIMARY KEY,
       title          TEXT NOT NULL,
       company        TEXT NOT NULL,
       industry       TEXT NOT NULL,
-      roleType       TEXT NOT NULL,
+      "roleType"     TEXT NOT NULL,
       location       TEXT NOT NULL,
-      openDate       TEXT,
-      closeDate      TEXT,
-      expectedReopen TEXT,
-      applyLink      TEXT NOT NULL,
+      "openDate"     TEXT,
+      "closeDate"    TEXT,
+      "expectedReopen" TEXT,
+      "applyLink"    TEXT NOT NULL,
       eligibility    TEXT,
       notes          TEXT,
-      createdAt      TEXT NOT NULL DEFAULT (datetime('now')),
-      updatedAt      TEXT NOT NULL DEFAULT (datetime('now'))
+      "createdAt"    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      "updatedAt"    TIMESTAMPTZ NOT NULL DEFAULT now()
     );
-    CREATE INDEX IF NOT EXISTS idx_programs_industry ON programs(industry);
-    CREATE INDEX IF NOT EXISTS idx_programs_company  ON programs(company);
   `);
-
-  _db = db;
-  return db;
+  await query(`CREATE INDEX IF NOT EXISTS idx_programs_industry ON programs(industry);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_programs_company ON programs(company);`);
 }
 
 // ---------------------------------------------------------------------------
-// Data-access helpers
+// Data-access helpers (all async)
 // ---------------------------------------------------------------------------
 
-export function listPrograms(): Program[] {
-  return getDb()
-    .prepare(`SELECT * FROM programs ORDER BY company COLLATE NOCASE, title`)
-    .all() as Program[];
+export async function listPrograms(): Promise<Program[]> {
+  await ensureSchema();
+  return query<Program>(
+    `SELECT * FROM programs ORDER BY lower(company), title`
+  );
 }
 
-export function getProgram(id: number): Program | undefined {
-  return getDb().prepare(`SELECT * FROM programs WHERE id = ?`).get(id) as
-    | Program
-    | undefined;
+export async function getProgram(id: number): Promise<Program | undefined> {
+  const rows = await query<Program>(`SELECT * FROM programs WHERE id = $1`, [id]);
+  return rows[0];
 }
 
-export function createProgram(input: ProgramInput): Program {
-  const stmt = getDb().prepare(`
-    INSERT INTO programs
-      (title, company, industry, roleType, location, openDate, closeDate,
-       expectedReopen, applyLink, eligibility, notes)
-    VALUES
-      (@title, @company, @industry, @roleType, @location, @openDate, @closeDate,
-       @expectedReopen, @applyLink, @eligibility, @notes)
-  `);
-  const info = stmt.run(normalize(input));
-  return getProgram(Number(info.lastInsertRowid))!;
+export async function createProgram(input: ProgramInput): Promise<Program> {
+  await ensureSchema();
+  const p = normalize(input);
+  const rows = await query<Program>(
+    `INSERT INTO programs
+      (title, company, industry, "roleType", location, "openDate", "closeDate",
+       "expectedReopen", "applyLink", eligibility, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     RETURNING *`,
+    [
+      p.title, p.company, p.industry, p.roleType, p.location, p.openDate,
+      p.closeDate, p.expectedReopen, p.applyLink, p.eligibility, p.notes,
+    ]
+  );
+  return rows[0];
 }
 
-export function updateProgram(id: number, input: ProgramInput): Program | undefined {
-  const stmt = getDb().prepare(`
-    UPDATE programs SET
-      title=@title, company=@company, industry=@industry, roleType=@roleType,
-      location=@location, openDate=@openDate, closeDate=@closeDate,
-      expectedReopen=@expectedReopen, applyLink=@applyLink,
-      eligibility=@eligibility, notes=@notes, updatedAt=datetime('now')
-    WHERE id=@id
-  `);
-  stmt.run({ ...normalize(input), id });
-  return getProgram(id);
+export async function updateProgram(
+  id: number,
+  input: ProgramInput
+): Promise<Program | undefined> {
+  const p = normalize(input);
+  const rows = await query<Program>(
+    `UPDATE programs SET
+       title=$1, company=$2, industry=$3, "roleType"=$4, location=$5,
+       "openDate"=$6, "closeDate"=$7, "expectedReopen"=$8, "applyLink"=$9,
+       eligibility=$10, notes=$11, "updatedAt"=now()
+     WHERE id=$12
+     RETURNING *`,
+    [
+      p.title, p.company, p.industry, p.roleType, p.location, p.openDate,
+      p.closeDate, p.expectedReopen, p.applyLink, p.eligibility, p.notes, id,
+    ]
+  );
+  return rows[0];
 }
 
-export function deleteProgram(id: number): boolean {
-  const info = getDb().prepare(`DELETE FROM programs WHERE id = ?`).run(id);
-  return info.changes > 0;
+export async function deleteProgram(id: number): Promise<boolean> {
+  const rows = await query(`DELETE FROM programs WHERE id = $1 RETURNING id`, [id]);
+  return rows.length > 0;
 }
 
-export function countPrograms(): number {
-  const row = getDb().prepare(`SELECT COUNT(*) AS n FROM programs`).get() as {
-    n: number;
-  };
-  return row.n;
+export async function countPrograms(): Promise<number> {
+  await ensureSchema();
+  const rows = await query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM programs`);
+  return rows[0].n;
 }
 
 /** Coerce empty strings to null so optional date/text columns stay clean. */

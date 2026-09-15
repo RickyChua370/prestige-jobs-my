@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 // GET /api/programs — public list of all programs.
 export async function GET() {
-  return NextResponse.json({ programs: listPrograms() });
+  return NextResponse.json({ programs: await listPrograms() });
 }
 
 // POST /api/programs — create (admin only).
@@ -18,6 +18,6 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const { data, errors } = parseProgramInput(body);
   if (!data) return NextResponse.json({ errors }, { status: 400 });
-  const program = createProgram(data);
+  const program = await createProgram(data);
   return NextResponse.json({ program }, { status: 201 });
 }

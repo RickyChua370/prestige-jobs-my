@@ -1,6 +1,9 @@
 /**
  * Seed script — loads a curated set of prestigious internship & graduate
- * programmes in Malaysia into the SQLite database.
+ * programmes in Malaysia into the Postgres database (Neon).
+ *
+ * Requires the DATABASE_URL environment variable (your Neon connection
+ * string). Locally it is read from .env.local automatically.
  *
  * Run with:  npm run seed          (adds only if empty)
  *            npm run seed -- --force  (wipes and reloads)
@@ -18,13 +21,9 @@
  * ---------------------------------------------------------------------------
  */
 
-import Database from "better-sqlite3";
-import path from "node:path";
-import fs from "node:fs";
+import { Pool } from "pg";
 import type { ProgramInput } from "../lib/types";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "prestige-jobs.db");
 const FORCE = process.argv.includes("--force");
 
 // ---------------------------------------------------------------------------
@@ -1711,76 +1710,88 @@ const programs: Seed[] = [
 // ---------------------------------------------------------------------------
 // Insert
 // ---------------------------------------------------------------------------
-function main() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  const db = new Database(DB_PATH);
-  db.pragma("journal_mode = WAL");
-  db.exec(`
+async function main() {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.error(
+      "✗ DATABASE_URL is not set.\n" +
+        "  Create a .env.local file with your Postgres connection string, e.g.:\n" +
+        '  DATABASE_URL="postgresql://user:password@host/dbname?sslmode=require"'
+    );
+    process.exit(1);
+  }
+
+  const pool = new Pool({
+    connectionString: url,
+    ssl:
+      url.includes("sslmode=require") || url.includes("neon.tech")
+        ? { rejectUnauthorized: false }
+        : undefined,
+  });
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS programs (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      id             SERIAL PRIMARY KEY,
       title          TEXT NOT NULL,
       company        TEXT NOT NULL,
       industry       TEXT NOT NULL,
-      roleType       TEXT NOT NULL,
+      "roleType"     TEXT NOT NULL,
       location       TEXT NOT NULL,
-      openDate       TEXT,
-      closeDate      TEXT,
-      expectedReopen TEXT,
-      applyLink      TEXT NOT NULL,
+      "openDate"     TEXT,
+      "closeDate"    TEXT,
+      "expectedReopen" TEXT,
+      "applyLink"    TEXT NOT NULL,
       eligibility    TEXT,
       notes          TEXT,
-      createdAt      TEXT NOT NULL DEFAULT (datetime('now')),
-      updatedAt      TEXT NOT NULL DEFAULT (datetime('now'))
+      "createdAt"    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      "updatedAt"    TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
 
-  const existing = (db.prepare(`SELECT COUNT(*) AS n FROM programs`).get() as {
-    n: number;
-  }).n;
+  const existing = (await pool.query(`SELECT COUNT(*)::int AS n FROM programs`))
+    .rows[0].n as number;
 
   if (existing > 0 && !FORCE) {
     console.log(
       `Database already has ${existing} programmes. Use "npm run seed -- --force" to wipe and reload.`
     );
-    db.close();
+    await pool.end();
     return;
   }
 
-  if (FORCE) db.exec(`DELETE FROM programs;`);
+  if (FORCE) await pool.query(`DELETE FROM programs`);
 
-  const insert = db.prepare(`
-    INSERT INTO programs
-      (title, company, industry, roleType, location, openDate, closeDate,
-       expectedReopen, applyLink, eligibility, notes)
-    VALUES
-      (@title, @company, @industry, @roleType, @location, @openDate, @closeDate,
-       @expectedReopen, @applyLink, @eligibility, @notes)
-  `);
+  for (const r of programs) {
+    await pool.query(
+      `INSERT INTO programs
+        (title, company, industry, "roleType", location, "openDate", "closeDate",
+         "expectedReopen", "applyLink", eligibility, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        r.title,
+        r.company,
+        r.industry,
+        r.roleType,
+        r.location ?? "Malaysia",
+        r.openDate ?? null,
+        r.closeDate ?? null,
+        r.expectedReopen ?? null,
+        r.applyLink,
+        r.eligibility ?? null,
+        r.notes ?? null,
+      ]
+    );
+  }
 
-  const tx = db.transaction((rows: Seed[]) => {
-    for (const r of rows) {
-      insert.run({
-        title: r.title,
-        company: r.company,
-        industry: r.industry,
-        roleType: r.roleType,
-        location: r.location ?? "Malaysia",
-        openDate: r.openDate ?? null,
-        closeDate: r.closeDate ?? null,
-        expectedReopen: r.expectedReopen ?? null,
-        applyLink: r.applyLink,
-        eligibility: r.eligibility ?? null,
-        notes: r.notes ?? null,
-      });
-    }
-  });
-
-  tx(programs);
-  const total = (db.prepare(`SELECT COUNT(*) AS n FROM programs`).get() as {
-    n: number;
-  }).n;
-  console.log(`✓ Seeded ${programs.length} programmes. Database now has ${total}.`);
-  db.close();
+  const total = (await pool.query(`SELECT COUNT(*)::int AS n FROM programs`))
+    .rows[0].n as number;
+  console.log(
+    `✓ Seeded ${programs.length} programmes. Database now has ${total}.`
+  );
+  await pool.end();
 }
 
-main();
+main().catch((err) => {
+  console.error("✗ Seed failed:", err);
+  process.exit(1);
+});
