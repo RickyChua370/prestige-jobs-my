@@ -13,20 +13,27 @@ Unlike a general job aggregator, this platform is a deliberately **short, high-q
 
 ## Tech stack
 
-- **Next.js 15** (App Router) + **React 19** + **TypeScript**
+- **Next.js 16** (App Router) + **React 19** + **TypeScript**
 - **Tailwind CSS** for styling
-- **SQLite** (via `better-sqlite3`) — a simple file-based database, no server to run
+- **Postgres** (via `node-postgres`/`pg`) — works with any Postgres, including free serverless [Neon](https://neon.tech) for hosting on Vercel
 
 ## Getting started
+
+You need a Postgres database. The easiest free option is [Neon](https://neon.tech):
+create a project and copy its connection string.
 
 ```bash
 # 1. Install dependencies
 npm install
 
-# 2. Load the curated starter data (~125 programmes)
+# 2. Configure environment
+cp .env.example .env.local
+#   then edit .env.local and paste your Neon DATABASE_URL + set ADMIN_PASSWORD
+
+# 3. Load the curated starter data (~125 programmes)
 npm run seed
 
-# 3. Start the app
+# 4. Start the app
 npm run dev
 ```
 
@@ -35,16 +42,18 @@ Then open <http://localhost:3000>.
 - Public board: `/`
 - Admin panel: `/admin`
 
-### Admin password
+### Environment variables
 
-The admin panel is protected by a single password. By default it is `changeme-admin`.
-Set your own by creating a `.env.local` file:
+| Variable | What it is |
+|---|---|
+| `DATABASE_URL` | Your Postgres connection string (from Neon). Required. |
+| `ADMIN_PASSWORD` | Password for the admin panel. Defaults to `changeme-admin` — **change it before going live.** |
 
-```
-ADMIN_PASSWORD=your-strong-password-here
-```
+Locally these go in `.env.local`. On Vercel, set them under **Project → Settings → Environment Variables**.
 
-> **Change this before deploying.**
+## Deploying to Vercel
+
+See **[DEPLOY.md](./DEPLOY.md)** for beginner-friendly, click-by-click deployment instructions.
 
 ## Managing the data
 

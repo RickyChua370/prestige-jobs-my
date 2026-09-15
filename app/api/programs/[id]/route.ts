@@ -19,14 +19,14 @@ export async function PUT(
 
   const { id } = await params;
   const numId = Number(id);
-  if (!getProgram(numId))
+  if (!(await getProgram(numId)))
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json().catch(() => null);
   const { data, errors } = parseProgramInput(body);
   if (!data) return NextResponse.json({ errors }, { status: 400 });
 
-  const program = updateProgram(numId, data);
+  const program = await updateProgram(numId, data);
   return NextResponse.json({ program });
 }
 
@@ -39,7 +39,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const ok = deleteProgram(Number(id));
+  const ok = await deleteProgram(Number(id));
   if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }
