@@ -46,7 +46,21 @@ async function query<T = Record<string, unknown>>(
   params: unknown[] = []
 ): Promise<T[]> {
   const res = await getPool().query(text, params);
-  return res.rows as T[];
+  return res.rows.map(normalizeRow) as T[];
+}
+
+/**
+ * The `pg` driver returns TIMESTAMPTZ columns as JavaScript Date objects, but
+ * the rest of the app (and the Program type) expects ISO strings — matching
+ * what the JSON API produces. Coerce those columns to strings on every read so
+ * date handling is consistent everywhere (server components, API, and client).
+ */
+function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {
+  for (const key of ["createdAt", "updatedAt"]) {
+    const v = row[key];
+    if (v instanceof Date) row[key] = v.toISOString();
+  }
+  return row;
 }
 
 /**
