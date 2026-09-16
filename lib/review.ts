@@ -102,7 +102,13 @@ export function getReviewReasons(
 
   // 4. Stale — not updated in a long time.
   if (p.updatedAt) {
-    const updatedDay = p.updatedAt.slice(0, 10);
+    // updatedAt is normally an ISO string, but be defensive in case a Date
+    // object is passed in (e.g. straight from the pg driver).
+    const updatedIso =
+      typeof p.updatedAt === "string"
+        ? p.updatedAt
+        : new Date(p.updatedAt as unknown as string | number | Date).toISOString();
+    const updatedDay = updatedIso.slice(0, 10);
     const age = daysBetween(updatedDay, today);
     if (age >= STALE_AFTER_DAYS) {
       reasons.push({
