@@ -76,6 +76,7 @@ export async function ensureSchema(): Promise<void> {
       industry       TEXT NOT NULL,
       "roleType"     TEXT NOT NULL,
       location       TEXT NOT NULL,
+      "timingMode"   TEXT NOT NULL DEFAULT 'dates',
       "openDate"     TEXT,
       "closeDate"    TEXT,
       "expectedReopen" TEXT,
@@ -89,6 +90,11 @@ export async function ensureSchema(): Promise<void> {
   `);
   // Migration: add infoLink to databases created before this column existed.
   await query(`ALTER TABLE programs ADD COLUMN IF NOT EXISTS "infoLink" TEXT;`);
+  // Migration: add timingMode; existing rows default to 'dates' so their
+  // behaviour is unchanged.
+  await query(
+    `ALTER TABLE programs ADD COLUMN IF NOT EXISTS "timingMode" TEXT NOT NULL DEFAULT 'dates';`
+  );
   await query(`CREATE INDEX IF NOT EXISTS idx_programs_industry ON programs(industry);`);
   await query(`CREATE INDEX IF NOT EXISTS idx_programs_company ON programs(company);`);
 }
@@ -114,14 +120,14 @@ export async function createProgram(input: ProgramInput): Promise<Program> {
   const p = normalize(input);
   const rows = await query<Program>(
     `INSERT INTO programs
-      (title, company, industry, "roleType", location, "openDate", "closeDate",
-       "expectedReopen", "applyLink", "infoLink", eligibility, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      (title, company, industry, "roleType", location, "timingMode", "openDate",
+       "closeDate", "expectedReopen", "applyLink", "infoLink", eligibility, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING *`,
     [
-      p.title, p.company, p.industry, p.roleType, p.location, p.openDate,
-      p.closeDate, p.expectedReopen, p.applyLink, p.infoLink, p.eligibility,
-      p.notes,
+      p.title, p.company, p.industry, p.roleType, p.location, p.timingMode,
+      p.openDate, p.closeDate, p.expectedReopen, p.applyLink, p.infoLink,
+      p.eligibility, p.notes,
     ]
   );
   return rows[0];
@@ -135,14 +141,15 @@ export async function updateProgram(
   const rows = await query<Program>(
     `UPDATE programs SET
        title=$1, company=$2, industry=$3, "roleType"=$4, location=$5,
-       "openDate"=$6, "closeDate"=$7, "expectedReopen"=$8, "applyLink"=$9,
-       "infoLink"=$10, eligibility=$11, notes=$12, "updatedAt"=now()
-     WHERE id=$13
+       "timingMode"=$6, "openDate"=$7, "closeDate"=$8, "expectedReopen"=$9,
+       "applyLink"=$10, "infoLink"=$11, eligibility=$12, notes=$13,
+       "updatedAt"=now()
+     WHERE id=$14
      RETURNING *`,
     [
-      p.title, p.company, p.industry, p.roleType, p.location, p.openDate,
-      p.closeDate, p.expectedReopen, p.applyLink, p.infoLink, p.eligibility,
-      p.notes, id,
+      p.title, p.company, p.industry, p.roleType, p.location, p.timingMode,
+      p.openDate, p.closeDate, p.expectedReopen, p.applyLink, p.infoLink,
+      p.eligibility, p.notes, id,
     ]
   );
   return rows[0];
@@ -187,17 +194,18 @@ export async function bulkImportPrograms(
     for (const { id, data } of rows) {
       const p = normalize(data);
       const values = [
-        p.title, p.company, p.industry, p.roleType, p.location, p.openDate,
-        p.closeDate, p.expectedReopen, p.applyLink, p.infoLink, p.eligibility,
-        p.notes,
+        p.title, p.company, p.industry, p.roleType, p.location, p.timingMode,
+        p.openDate, p.closeDate, p.expectedReopen, p.applyLink, p.infoLink,
+        p.eligibility, p.notes,
       ];
       if (id !== null) {
         const res = await client.query(
           `UPDATE programs SET
              title=$1, company=$2, industry=$3, "roleType"=$4, location=$5,
-             "openDate"=$6, "closeDate"=$7, "expectedReopen"=$8, "applyLink"=$9,
-             "infoLink"=$10, eligibility=$11, notes=$12, "updatedAt"=now()
-           WHERE id=$13`,
+             "timingMode"=$6, "openDate"=$7, "closeDate"=$8, "expectedReopen"=$9,
+             "applyLink"=$10, "infoLink"=$11, eligibility=$12, notes=$13,
+             "updatedAt"=now()
+           WHERE id=$14`,
           [...values, id]
         );
         if (res.rowCount && res.rowCount > 0) outcome.updated++;
@@ -205,10 +213,10 @@ export async function bulkImportPrograms(
       } else {
         await client.query(
           `INSERT INTO programs
-             (title, company, industry, "roleType", location, "openDate",
-              "closeDate", "expectedReopen", "applyLink", "infoLink",
+             (title, company, industry, "roleType", location, "timingMode",
+              "openDate", "closeDate", "expectedReopen", "applyLink", "infoLink",
               eligibility, notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
           values
         );
         outcome.created++;
@@ -234,6 +242,7 @@ function normalize(input: ProgramInput) {
     industry: input.industry,
     roleType: input.roleType,
     location: input.location.trim(),
+    timingMode: input.timingMode ?? "dates",
     openDate: nn(input.openDate),
     closeDate: nn(input.closeDate),
     expectedReopen: nn(input.expectedReopen),

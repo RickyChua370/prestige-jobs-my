@@ -2,8 +2,8 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { computeStatus, type Program, type ProgramInput } from "@/lib/types";
-import { STATUS_META, formatDate, timeAgo } from "@/lib/format";
+import { displayStatus, type Program, type ProgramInput } from "@/lib/types";
+import { DISPLAY_STATUS_META, formatDate, timeAgo } from "@/lib/format";
 import {
   getReviewReasons,
   summarizeReview,
@@ -296,7 +296,7 @@ export default function AdminDashboard({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.map((p) => {
-              const status = computeStatus(p);
+              const status = displayStatus(p);
               const reasons = getReviewReasons(p);
               return (
                 <tr key={p.id} className="hover:bg-slate-50/70">
@@ -320,9 +320,9 @@ export default function AdminDashboard({
                   <td className="px-4 py-3 text-slate-600">{p.industry}</td>
                   <td className="px-4 py-3">
                     <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_META[status].className}`}
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${DISPLAY_STATUS_META[status].className}`}
                     >
-                      {STATUS_META[status].label}
+                      {DISPLAY_STATUS_META[status].label}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-600">

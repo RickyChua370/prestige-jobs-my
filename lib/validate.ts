@@ -1,4 +1,10 @@
-import { INDUSTRIES, ROLE_TYPES, type ProgramInput } from "./types";
+import {
+  INDUSTRIES,
+  ROLE_TYPES,
+  TIMING_MODES,
+  type ProgramInput,
+  type TimingMode,
+} from "./types";
 
 /** Validate & coerce arbitrary JSON into a ProgramInput. Returns errors list. */
 export function parseProgramInput(body: unknown): {
@@ -48,6 +54,13 @@ export function parseProgramInput(body: unknown): {
   if (openDate && closeDate && closeDate < openDate)
     errors.push("Close date cannot be before open date.");
 
+  // Timing mode: default to "dates" when absent (backward compatible & CSVs
+  // without the column). Validate against the known set.
+  const rawTiming = str(b.timingMode);
+  const timingMode: TimingMode = (rawTiming || "dates") as TimingMode;
+  if (!TIMING_MODES.includes(timingMode))
+    errors.push(`Timing mode must be one of: ${TIMING_MODES.join(", ")}.`);
+
   if (errors.length) return { errors };
 
   return {
@@ -58,6 +71,7 @@ export function parseProgramInput(body: unknown): {
       industry: industry as ProgramInput["industry"],
       roleType: roleType as ProgramInput["roleType"],
       location,
+      timingMode,
       openDate,
       closeDate,
       expectedReopen: optStr(b.expectedReopen),
