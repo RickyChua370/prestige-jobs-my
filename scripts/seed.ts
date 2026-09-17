@@ -42,9 +42,10 @@ const monthName = (offsetMonths: number) => {
   return d.toLocaleDateString("en-GB", { month: "short", year: "numeric" });
 };
 
-type Seed = Omit<ProgramInput, "location" | "infoLink"> & {
+type Seed = Omit<ProgramInput, "location" | "infoLink" | "timingMode"> & {
   location?: string;
   infoLink?: string | null;
+  timingMode?: ProgramInput["timingMode"];
 };
 
 const programs: Seed[] = [
@@ -1741,6 +1742,7 @@ async function main() {
       "roleType"     TEXT NOT NULL,
       location       TEXT NOT NULL,
       "openDate"     TEXT,
+      "timingMode"   TEXT NOT NULL DEFAULT 'dates',
       "closeDate"    TEXT,
       "expectedReopen" TEXT,
       "applyLink"    TEXT NOT NULL,
@@ -1768,15 +1770,16 @@ async function main() {
   for (const r of programs) {
     await pool.query(
       `INSERT INTO programs
-        (title, company, industry, "roleType", location, "openDate", "closeDate",
-         "expectedReopen", "applyLink", "infoLink", eligibility, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        (title, company, industry, "roleType", location, "timingMode", "openDate",
+         "closeDate", "expectedReopen", "applyLink", "infoLink", eligibility, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         r.title,
         r.company,
         r.industry,
         r.roleType,
         r.location ?? "Malaysia",
+        r.timingMode ?? "dates",
         r.openDate ?? null,
         r.closeDate ?? null,
         r.expectedReopen ?? null,

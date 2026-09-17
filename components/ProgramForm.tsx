@@ -6,7 +6,17 @@ import {
   ROLE_TYPES,
   type Program,
   type ProgramInput,
+  type TimingMode,
 } from "@/lib/types";
+
+const TIMING_OPTIONS: { value: TimingMode; label: string; hint: string }[] = [
+  { value: "open_now", label: "Open now", hint: "Accepting applications now — no specific dates needed." },
+  { value: "open_all_year", label: "Open all year (rolling)", hint: "Always accepting — no cycle." },
+  { value: "closing_soon", label: "Closing soon", hint: "Open but wrapping up — no exact close date needed." },
+  { value: "upcoming", label: "Upcoming", hint: "Not open yet. Add an 'expected' note below if you like." },
+  { value: "closed", label: "Closed", hint: "Not currently accepting applications." },
+  { value: "dates", label: "Use specific dates", hint: "Enter exact open/close dates; status updates automatically." },
+];
 
 const EMPTY: ProgramInput = {
   title: "",
@@ -14,6 +24,7 @@ const EMPTY: ProgramInput = {
   industry: "Investment Banking",
   roleType: "Internship",
   location: "Malaysia",
+  timingMode: "open_now",
   openDate: null,
   closeDate: null,
   expectedReopen: null,
@@ -42,6 +53,7 @@ export default function ProgramForm({
           industry: initial.industry,
           roleType: initial.roleType,
           location: initial.location,
+          timingMode: initial.timingMode ?? "dates",
           openDate: initial.openDate,
           closeDate: initial.closeDate,
           expectedReopen: initial.expectedReopen,
@@ -153,30 +165,58 @@ export default function ProgramForm({
             className={inputCls}
           />
         </Field>
-        <Field label="Application opens">
-          <input
-            type="date"
-            value={form.openDate ?? ""}
-            onChange={(e) => set("openDate", e.target.value || null)}
+
+        <Field label="Application timing *">
+          <select
+            value={form.timingMode}
+            onChange={(e) => set("timingMode", e.target.value as TimingMode)}
             className={inputCls}
-          />
+          >
+            {TIMING_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 block text-xs text-slate-400">
+            {TIMING_OPTIONS.find((o) => o.value === form.timingMode)?.hint}
+          </span>
         </Field>
-        <Field label="Application closes">
-          <input
-            type="date"
-            value={form.closeDate ?? ""}
-            onChange={(e) => set("closeDate", e.target.value || null)}
-            className={inputCls}
-          />
-        </Field>
-        <Field label="Expected reopen (for upcoming annual cycles)">
-          <input
-            value={form.expectedReopen ?? ""}
-            onChange={(e) => set("expectedReopen", e.target.value || null)}
-            placeholder="Expected Aug 2026"
-            className={inputCls}
-          />
-        </Field>
+
+        {/* Exact dates only matter in "Use specific dates" mode */}
+        {form.timingMode === "dates" && (
+          <>
+            <Field label="Application opens">
+              <input
+                type="date"
+                value={form.openDate ?? ""}
+                onChange={(e) => set("openDate", e.target.value || null)}
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Application closes">
+              <input
+                type="date"
+                value={form.closeDate ?? ""}
+                onChange={(e) => set("closeDate", e.target.value || null)}
+                className={inputCls}
+              />
+            </Field>
+          </>
+        )}
+
+        {/* An optional "expected" note is useful for upcoming programmes */}
+        {(form.timingMode === "upcoming" || form.timingMode === "dates") && (
+          <Field label="Expected reopen (optional note)">
+            <input
+              value={form.expectedReopen ?? ""}
+              onChange={(e) => set("expectedReopen", e.target.value || null)}
+              placeholder="Expected Aug 2026"
+              className={inputCls}
+            />
+          </Field>
+        )}
+
         <Field label="Eligibility">
           <input
             value={form.eligibility ?? ""}

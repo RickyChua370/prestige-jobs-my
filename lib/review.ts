@@ -60,47 +60,59 @@ export function getReviewReasons(
   const reasons: ReviewReason[] = [];
   const today = iso(now);
 
-  // 1. Close date has passed → the listing is out of date for this cycle.
-  if (p.closeDate && p.closeDate < today) {
-    const days = daysBetween(p.closeDate, today);
-    reasons.push({
-      code: "closed_recently",
-      message:
-        days <= 1
-          ? "Closed today — update with next cycle's dates or mark upcoming."
-          : `Closed ${days} days ago — update the dates for the next cycle.`,
-      severity: 3,
-    });
-  }
+  // The date-driven checks (1–3) only make sense when the programme is using
+  // real dates. Manual timing modes (open now / all year / closing soon /
+  // upcoming / closed) are curator-controlled and never date-nagged.
+  const usesDates = (p.timingMode ?? "dates") === "dates";
 
-  // 2. An "upcoming" annual cycle whose expected reopen month has arrived.
-  if (!p.openDate && !p.closeDate && p.expectedReopen) {
-    const due = parseExpectedReopen(p.expectedReopen);
-    if (due && due <= today) {
+  if (usesDates) {
+    // 1. Close date has passed → the listing is out of date for this cycle.
+    if (p.closeDate && p.closeDate < today) {
+      const days = daysBetween(p.closeDate, today);
       reasons.push({
-        code: "reopen_due",
-        message: `Expected to reopen (${p.expectedReopen}) has arrived — check the official page and add real dates.`,
+        code: "closed_recently",
+        message:
+          days <= 1
+            ? "Closed today — update with next cycle's dates or mark upcoming."
+            : `Closed ${days} days ago — update the dates for the next cycle.`,
         severity: 3,
       });
     }
-  }
 
-  // 3. Open and closing very soon — a nudge to verify before it lapses.
-  if (p.openDate && p.closeDate && p.openDate <= today && p.closeDate >= today) {
-    const days = daysBetween(today, p.closeDate);
-    if (days <= CLOSING_SOON_DAYS) {
-      reasons.push({
-        code: "closing_soon",
-        message:
-          days === 0
-            ? "Closes today."
-            : `Closes in ${days} day${days === 1 ? "" : "s"}.`,
-        severity: 1,
-      });
+    // 2. An "upcoming" annual cycle whose expected reopen month has arrived.
+    if (!p.openDate && !p.closeDate && p.expectedReopen) {
+      const due = parseExpectedReopen(p.expectedReopen);
+      if (due && due <= today) {
+        reasons.push({
+          code: "reopen_due",
+          message: `Expected to reopen (${p.expectedReopen}) has arrived — check the official page and add real dates.`,
+          severity: 3,
+        });
+      }
+    }
+
+    // 3. Open and closing very soon — a nudge to verify before it lapses.
+    if (
+      p.openDate &&
+      p.closeDate &&
+      p.openDate <= today &&
+      p.closeDate >= today
+    ) {
+      const days = daysBetween(today, p.closeDate);
+      if (days <= CLOSING_SOON_DAYS) {
+        reasons.push({
+          code: "closing_soon",
+          message:
+            days === 0
+              ? "Closes today."
+              : `Closes in ${days} day${days === 1 ? "" : "s"}.`,
+          severity: 1,
+        });
+      }
     }
   }
 
-  // 4. Stale — not updated in a long time.
+  // 4. Stale — not updated in a long time (applies to all modes).
   if (p.updatedAt) {
     // updatedAt is normally an ISO string, but be defensive in case a Date
     // object is passed in (e.g. straight from the pg driver).

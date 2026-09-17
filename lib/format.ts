@@ -1,4 +1,4 @@
-import type { Status } from "./types";
+import type { DisplayStatus, Status } from "./types";
 
 /** Format an ISO date (YYYY-MM-DD) as e.g. "15 Sep 2026". Returns fallback if null. */
 export function formatDate(iso: string | null, fallback = "—"): string {
@@ -45,6 +45,33 @@ export const STATUS_META: Record<
   open: {
     label: "Open now",
     className: "bg-emerald-100 text-emerald-800 ring-emerald-600/20",
+  },
+  upcoming: {
+    label: "Upcoming",
+    className: "bg-amber-100 text-amber-800 ring-amber-600/20",
+  },
+  closed: {
+    label: "Closed",
+    className: "bg-slate-100 text-slate-600 ring-slate-500/20",
+  },
+};
+
+/** Richer badge metadata for the display status (distinguishes open flavours). */
+export const DISPLAY_STATUS_META: Record<
+  DisplayStatus,
+  { label: string; className: string }
+> = {
+  open: {
+    label: "Open now",
+    className: "bg-emerald-100 text-emerald-800 ring-emerald-600/20",
+  },
+  open_all_year: {
+    label: "Open · all year",
+    className: "bg-emerald-100 text-emerald-800 ring-emerald-600/20",
+  },
+  closing_soon: {
+    label: "Closing soon",
+    className: "bg-orange-100 text-orange-800 ring-orange-600/20",
   },
   upcoming: {
     label: "Upcoming",

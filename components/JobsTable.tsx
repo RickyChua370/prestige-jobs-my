@@ -6,11 +6,13 @@ import {
   ROLE_TYPES,
   STATUSES,
   computeStatus,
+  displayStatus,
   pickLink,
+  type DisplayStatus,
   type Program,
   type Status,
 } from "@/lib/types";
-import { STATUS_META, daysUntil, formatDate } from "@/lib/format";
+import { DISPLAY_STATUS_META, daysUntil, formatDate } from "@/lib/format";
 
 type SortKey = "company" | "title" | "industry" | "closeDate" | "status";
 type SortDir = "asc" | "desc";
@@ -26,9 +28,14 @@ export default function JobsTable({ programs }: { programs: Program[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("closeDate");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  // Attach the computed (date-derived) status to each program once.
+  // Attach the computed filter-status and richer display-status to each program.
   const withStatus = useMemo(
-    () => programs.map((p) => ({ ...p, _status: computeStatus(p) })),
+    () =>
+      programs.map((p) => ({
+        ...p,
+        _status: computeStatus(p),
+        _display: displayStatus(p),
+      })),
     [programs]
   );
 
@@ -168,7 +175,7 @@ export default function JobsTable({ programs }: { programs: Program[] }) {
                   key={s}
                   active={status === s}
                   onClick={() => setStatus(s)}
-                  label={STATUS_META[s].label}
+                  label={DISPLAY_STATUS_META[s].label}
                 />
               ))}
             </div>
@@ -224,8 +231,13 @@ export default function JobsTable({ programs }: { programs: Program[] }) {
           <tbody className="divide-y divide-slate-100">
             {filtered.map((p) => {
               const days = daysUntil(p.closeDate);
+              // Only show a date countdown when the programme actually uses dates.
               const closingSoon =
-                p._status === "open" && days !== null && days <= 14 && days >= 0;
+                p.timingMode === "dates" &&
+                p._status === "open" &&
+                days !== null &&
+                days <= 14 &&
+                days >= 0;
               return (
                 <tr key={p.id} className="hover:bg-slate-50/70">
                   <td className="px-4 py-3">
@@ -244,7 +256,7 @@ export default function JobsTable({ programs }: { programs: Program[] }) {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{p.industry}</td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={p._status} />
+                    <StatusBadge status={p._display} />
                     {p._status === "upcoming" && p.expectedReopen && (
                       <div className="mt-1 text-xs text-slate-500">
                         {p.expectedReopen}
@@ -321,8 +333,8 @@ function Th({
   );
 }
 
-function StatusBadge({ status }: { status: Status }) {
-  const meta = STATUS_META[status];
+function StatusBadge({ status }: { status: DisplayStatus }) {
+  const meta = DISPLAY_STATUS_META[status];
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${meta.className}`}
